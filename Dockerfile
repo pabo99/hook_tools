@@ -35,7 +35,7 @@ RUN python3 -m pip install --upgrade pip && \
         Jinja2==3.0.3 \
         types-requests==2.27.8 \
         pyparsing==2.4.7 \
-        mypy==0.770 \
+        mypy==0.931 \
         pika-stubs==0.1.3 \
         pytest-stub==1.1.0 \
         omegaup==1.5.4 && \
