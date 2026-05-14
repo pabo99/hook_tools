@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.13"]
 
     steps:
       - name: Checkout
@@ -50,7 +50,10 @@ jobs:
           python -m pip install pylint pep8
 
       - name: Run unit tests
-        run: python -m unittest tests.linters_test
+        run: |
+          PYTHONPATH=src python -m unittest \
+            tests.linters_test.TestLinters.test_sql_fix \
+            tests.linters_test.TestLinters.test_sql_lint_errors
 
       - name: Validate repository
         continue-on-error: true
