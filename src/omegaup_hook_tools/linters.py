@@ -1030,19 +1030,53 @@ class SqlFluffLinter(Linter):
         super().__init__()
         self.__options = options or {}
 
+    def _common_args(self) -> List[str]:
+        common_args = ['--dialect', self.__options.get('dialect', 'mysql')]
+        if 'config' in self.__options:
+            common_args.extend(['--config', self.__options['config']])
+        if 'exclude_rules' in self.__options:
+            common_args.extend(
+                ['--exclude-rules', self.__options['exclude_rules']])
+        if 'templater' in self.__options:
+            common_args.extend(['--templater', self.__options['templater']])
+        return common_args
+
+    def _parse_diagnostics(self, stdout: Text, filename: str,
+                           contents: bytes) -> List[Diagnostic]:
+        diagnostics: List[Diagnostic] = []
+        lines = contents.decode('utf-8', errors='replace').split('\n')
+        try:
+            report = json.loads(stdout)
+            for file_report in report:
+                for violation in file_report.get('violations', []):
+                    lineno = violation.get('line_no')
+                    col = violation.get('line_pos')
+                    line = None
+                    if isinstance(lineno, int) and lineno <= len(lines):
+                        line = lines[lineno - 1].rstrip('\n')
+                    message = violation.get('description', 'sqlfluff lint error')
+                    if 'code' in violation:
+                        message = f'[{violation["code"]}] {message}'
+                    diagnostics.append(
+                        Diagnostic(message=message,
+                                   filename=filename,
+                                   line=line,
+                                   lineno=lineno,
+                                   col=col))
+        except json.decoder.JSONDecodeError:
+            diagnostics.append(
+                Diagnostic(
+                    message=stdout.strip() or 'sqlfluff lint errors',
+                    filename=filename,
+                ))
+        return diagnostics
+
     def run_one(self, filename: str, contents: bytes) -> SingleResult:
         with tempfile.NamedTemporaryFile(suffix='.sql') as tmp:
             tmp.write(contents)
             tmp.flush()
 
-            common_args = ['--dialect', self.__options.get('dialect', 'mysql')]
-            if 'config' in self.__options:
-                common_args.extend(['--config', self.__options['config']])
-            if 'exclude_rules' in self.__options:
-                common_args.extend(
-                    ['--exclude-rules', self.__options['exclude_rules']])
-            if 'templater' in self.__options:
-                common_args.extend(['--templater', self.__options['templater']])
+            common_args = self._common_args()
 
             args = [
                 _which('sqlfluff'),
@@ -1075,37 +1109,10 @@ class SqlFluffLinter(Linter):
                                     check=False,
                                     universal_newlines=True)
             if result.returncode != 0:
-                diagnostics: List[Diagnostic] = []
-                lines = contents.decode('utf-8', errors='replace').split('\n')
-                try:
-                    report = json.loads(result.stdout)
-                    for file_report in report:
-                        for violation in file_report.get('violations', []):
-                            lineno = violation.get('line_no')
-                            col = violation.get('line_pos')
-                            line = None
-                            if isinstance(lineno, int) and lineno <= len(lines):
-                                line = lines[lineno - 1].rstrip('\n')
-                            message = violation.get('description',
-                                                    'sqlfluff lint error')
-                            if 'code' in violation:
-                                message = f'[{violation["code"]}] {message}'
-                            diagnostics.append(
-                                Diagnostic(message=message,
-                                           filename=filename,
-                                           line=line,
-                                           lineno=lineno,
-                                           col=col))
-                except json.decoder.JSONDecodeError:
-                    diagnostics.append(
-                        Diagnostic(
-                            message=result.stdout.strip()
-                            or 'sqlfluff lint errors',
-                            filename=filename,
-                        ))
                 raise LinterException('sqlfluff lint errors',
                                       fixable=False,
-                                      diagnostics=diagnostics)
+                                      diagnostics=self._parse_diagnostics(
+                                          result.stdout, filename, contents))
 
             return SingleResult(contents, [])
 
