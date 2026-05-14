@@ -55,6 +55,11 @@ linters soportados (con sus respectivas opciones) son:
      pep8.
   * `pylint_config`: Una cadena con la ruta del archivo de configuración para
      pylint.
+* `sql`: Corre [sqlfluff](https://docs.sqlfluff.com).
+  * `dialect`: El dialecto de SQL a usar (default: `mysql`).
+  * `config`: (Opcional) Ruta al archivo de configuración de sqlfluff.
+  * `exclude_rules`: (Opcional) Lista de reglas a excluir.
+  * `templater`: (Opcional) Templater de sqlfluff.
 * `custom`: Corre comandos personalizados.
   * `commands`: Un arreglo con comandos.
 

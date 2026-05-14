@@ -1021,6 +1021,99 @@ class ClangFormatLinter(Linter):
         return 'clang-format'
 
 
+class SqlFluffLinter(Linter):
+    '''Runs sqlfluff for SQL files.'''
+
+    # pylint: disable=R0903
+
+    def __init__(self, options: Optional[Options] = None) -> None:
+        super().__init__()
+        self.__options = options or {}
+
+    def run_one(self, filename: str, contents: bytes) -> SingleResult:
+        with tempfile.NamedTemporaryFile(suffix='.sql') as tmp:
+            tmp.write(contents)
+            tmp.flush()
+
+            common_args = ['--dialect', self.__options.get('dialect', 'mysql')]
+            if 'config' in self.__options:
+                common_args.extend(['--config', self.__options['config']])
+            if 'exclude_rules' in self.__options:
+                common_args.extend(
+                    ['--exclude-rules', self.__options['exclude_rules']])
+            if 'templater' in self.__options:
+                common_args.extend(['--templater', self.__options['templater']])
+
+            args = [
+                _which('sqlfluff'),
+                'fix',
+                '--force',
+            ] + common_args + [tmp.name]
+            logging.debug('lint_sqlfluff: Running %s', args)
+            subprocess.run(args,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT,
+                           check=False,
+                           universal_newlines=True)
+
+            with open(tmp.name, 'rb') as tmp_in:
+                new_contents = tmp_in.read()
+
+            if new_contents != contents:
+                return SingleResult(new_contents, ['sql'])
+
+            args = [
+                _which('sqlfluff'),
+                'lint',
+                '--format',
+                'json',
+            ] + common_args + [tmp.name]
+            logging.debug('lint_sqlfluff: Running %s', args)
+            result = subprocess.run(args,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT,
+                                    check=False,
+                                    universal_newlines=True)
+            if result.returncode != 0:
+                diagnostics: List[Diagnostic] = []
+                lines = contents.decode('utf-8', errors='replace').split('\n')
+                try:
+                    report = json.loads(result.stdout)
+                    for file_report in report:
+                        for violation in file_report.get('violations', []):
+                            lineno = violation.get('line_no')
+                            col = violation.get('line_pos')
+                            line = None
+                            if isinstance(lineno, int) and lineno <= len(lines):
+                                line = lines[lineno - 1].rstrip('\n')
+                            message = violation.get('description',
+                                                    'sqlfluff lint error')
+                            if 'code' in violation:
+                                message = f'[{violation["code"]}] {message}'
+                            diagnostics.append(
+                                Diagnostic(message=message,
+                                           filename=filename,
+                                           line=line,
+                                           lineno=lineno,
+                                           col=col))
+                except json.decoder.JSONDecodeError:
+                    diagnostics.append(
+                        Diagnostic(
+                            message=result.stdout.strip()
+                            or 'sqlfluff lint errors',
+                            filename=filename,
+                        ))
+                raise LinterException('sqlfluff lint errors',
+                                      fixable=False,
+                                      diagnostics=diagnostics)
+
+            return SingleResult(contents, [])
+
+    @property
+    def name(self) -> Text:
+        return 'sql'
+
+
 class EslintLinter(Linter):
     '''Runs eslint.'''
 
