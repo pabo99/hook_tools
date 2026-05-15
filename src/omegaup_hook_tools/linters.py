@@ -1084,7 +1084,6 @@ class SqlFluffLinter(Linter):
                 '--force',
                 '--ignore=parsing',
             ] + common_args + [tmp.name]
-            logging.debug('lint_sqlfluff: Running %s', args)
             subprocess.run(args,
                            stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT,
